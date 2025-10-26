@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import routes from "#routes/index.js";
 import { errorHandler } from "#middlewares/errorHandler.js";
+import { restoreSchedules } from "schedulers/movieSchedulers.js";
 
 dotenv.config();
 
@@ -14,6 +15,8 @@ app.use(cors({ origin: process.env.APP_URL, credentials: true }));
 app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(morgan("dev"));
+
+restoreSchedules();
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
