@@ -1,4 +1,4 @@
-import Admin from "#models/Admin.js";
+import Admin from "#models/admin.model.js";
 import bcrypt from "bcrypt";
 import { signToken } from "#utils/jwt.js";
 

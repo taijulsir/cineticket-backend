@@ -15,4 +15,6 @@ AdminSchema.pre("save", async function(next) {
   next();
 });
 
-export default model("Admin", AdminSchema);
+const Admin = model("Admin", AdminSchema);
+export default Admin;
+

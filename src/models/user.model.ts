@@ -8,10 +8,12 @@ const UserSchema = new Schema({
   role: { type: String, enum: ["user"], default: "user" },
 }, { timestamps: true });
 
-UserSchema.pre("save", async function(next) {
+UserSchema.pre("save", async function (next) {
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
 
-export default model("User", UserSchema);
+const User = model("User", UserSchema);
+export default User;
+
