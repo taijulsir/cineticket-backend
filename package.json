@@ -12,14 +12,18 @@
     "bcrypt": "^5.1.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "dayjs": "^1.11.18",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.1.0",
+    "google-auth-library": "^10.4.2",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.6.0",
     "morgan": "^1.10.0",
     "node-schedule": "^2.1.1",
     "winston": "^3.13.0",
-    "zod": "^3.23.8"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
@@ -41,6 +45,7 @@
     "#models/*": "./dist/models/*",
     "#middlewares/*": "./dist/middlewares/*",
     "#routes/*": "./dist/routes/*",
-    "#utils/*": "./dist/utils/*"
+    "#utils/*": "./dist/utils/*",
+    "#validators/*": "./dist/validators/*"
   }
 }

@@ -17,7 +17,8 @@
       "#models/*": ["models/*"],
       "#middlewares/*": ["middlewares/*"],
       "#routes/*": ["routes/*"],
-      "#utils/*": ["utils/*"]
+      "#utils/*": ["utils/*"],
+      "#validators/*": ["validators/*"]
     }
   },
   "include": ["src"]
