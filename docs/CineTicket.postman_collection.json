@@ -1,0 +1,889 @@
+{
+  "info": {
+    "name": "CineTicket Backend API",
+    "_postman_id": "cineticket-backend-v1",
+    "description": "Complete API collection for the CineTicket NestJS backend.\n\nBase URL: {{baseUrl}}\n\nEnvironment variables required:\n- baseUrl\n- accessToken\n- refreshToken\n- eventId\n- showId\n- theaterId\n- hallId\n- orderId\n- promoCodeId",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:5011/api", "type": "string" },
+    { "key": "accessToken",  "value": "",                          "type": "string" },
+    { "key": "refreshToken", "value": "",                          "type": "string" },
+    { "key": "eventId",      "value": "",                          "type": "string" },
+    { "key": "showId",       "value": "",                          "type": "string" },
+    { "key": "theaterId",    "value": "",                          "type": "string" },
+    { "key": "hallId",       "value": "",                          "type": "string" },
+    { "key": "orderId",      "value": "",                          "type": "string" },
+    { "key": "promoCodeId",  "value": "",                          "type": "string" }
+  ],
+  "item": [
+
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] },
+            "description": "Returns API health status including database connectivity."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('success is true', () => pm.expect(pm.response.json().success).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password@123\",\n  \"role\": \"Admin\"\n}"
+            },
+            "description": "Authenticate and receive access + refresh token pair.\nThrottled to 10 requests per 60 seconds."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200 or 201', () => pm.expect(pm.response.code).to.be.oneOf([200, 201]));",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "  console.log('Tokens stored in collection variables.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/refresh", "host": ["{{baseUrl}}"], "path": ["auth", "refresh"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "description": "Rotate refresh token. Returns new access + refresh token pair. Old refresh token is revoked."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/auth/logout", "host": ["{{baseUrl}}"], "path": ["auth", "logout"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "description": "Revoke the provided refresh token."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/profile", "host": ["{{baseUrl}}"], "path": ["auth", "profile"] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Returns the decoded JWT payload of the current user. Requires valid access token."
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Example (Admin only)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/auth/admin-example", "host": ["{{baseUrl}}"], "path": ["auth", "admin-example"] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Admin-only protected route example. Returns { ok: true }."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Events",
+      "item": [
+        {
+          "name": "List Events",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/events?status=NOW_SELLING&type=MOVIE&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["events"],
+              "query": [
+                { "key": "status", "value": "NOW_SELLING", "description": "EventStatus: NOW_SELLING | UPCOMING | VOTE_TO_BRING | PAST" },
+                { "key": "type",   "value": "MOVIE",       "description": "EventType: MOVIE | OTHERS" },
+                { "key": "page",   "value": "1" },
+                { "key": "limit",  "value": "10" }
+              ]
+            },
+            "description": "Public endpoint. Returns paginated list of events. Supports filtering by status, type, date, location."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.length > 0) {",
+                  "  pm.collectionVariables.set('eventId', data[0].id);",
+                  "  console.log('eventId set:', data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Shows",
+      "item": [
+        {
+          "name": "List Shows",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/shows?eventId={{eventId}}&page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["shows"],
+              "query": [
+                { "key": "eventId", "value": "{{eventId}}", "description": "Filter by event UUID" },
+                { "key": "page",    "value": "1" },
+                { "key": "limit",   "value": "10" }
+              ]
+            },
+            "description": "Public endpoint. Returns list of shows, optionally filtered by eventId, city, date."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.length > 0) {",
+                  "  pm.collectionVariables.set('showId', data[0].id);",
+                  "  console.log('showId set:', data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Show Seats",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/shows/{{showId}}/seats", "host": ["{{baseUrl}}"], "path": ["shows", "{{showId}}", "seats"] },
+            "description": "Returns full seat list for a show with merged live status (AVAILABLE, RESERVED, BOOKED, BLOCKED)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Show Seat Map",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/shows/{{showId}}/seat-map", "host": ["{{baseUrl}}"], "path": ["shows", "{{showId}}", "seat-map"] },
+            "description": "Returns seat map grouped by rows. Useful for rendering an interactive seat picker UI."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Seat Map",
+      "item": [
+        {
+          "name": "Get Show Seat Layout",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/show-seats/layout/{{showId}}", "host": ["{{baseUrl}}"], "path": ["show-seats", "layout", "{{showId}}"] },
+            "description": "Returns raw show seat layout for a given show ID."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Orders",
+      "item": [
+        {
+          "name": "Create Order",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/orders", "host": ["{{baseUrl}}"], "path": ["orders"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Jane Doe\",\n  \"email\": \"jane@example.com\",\n  \"mobileNumber\": \"+61400000000\",\n  \"eventId\": \"{{eventId}}\",\n  \"showId\": \"{{showId}}\",\n  \"seatIds\": [\"<showSeatId1>\", \"<showSeatId2>\"],\n  \"promoCodeId\": null,\n  \"total\": 45.00\n}"
+            },
+            "description": "Create a ticket order. Atomically books selected seats (transitions AVAILABLE → RESERVED/BOOKED). Rate limited to 5 requests per 60 seconds."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) {",
+                  "  pm.collectionVariables.set('orderId', data.id);",
+                  "  console.log('orderId set:', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Order by ID",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/orders/{{orderId}}", "host": ["{{baseUrl}}"], "path": ["orders", "{{orderId}}"] },
+            "description": "Get a single order with its line items by order UUID."
+          },
+          "response": []
+        },
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/orders?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "customerId", "value": "", "description": "Filter by customer UUID (optional)" },
+                { "key": "page",       "value": "1" },
+                { "key": "limit",      "value": "20" }
+              ]
+            },
+            "description": "Paginated list of orders. Filter by customerId, page, and limit."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Payment Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/payments/health", "host": ["{{baseUrl}}"], "path": ["payments", "health"] },
+            "description": "Check payment subsystem health."
+          },
+          "response": []
+        },
+        {
+          "name": "Mock — Start Payment",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/payments/mock/start", "host": ["{{baseUrl}}"], "path": ["payments", "mock", "start"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\"\n}"
+            },
+            "description": "Creates a mock payment session for a PENDING order. Returns a session token or redirect URL."
+          },
+          "response": []
+        },
+        {
+          "name": "Mock — Confirm Payment",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/payments/mock/confirm", "host": ["{{baseUrl}}"], "path": ["payments", "mock", "confirm"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"transactionId\": \"txn_mock_abc123\"\n}"
+            },
+            "description": "Confirms payment for a PENDING order. Transitions order → CONFIRMED and seats → BOOKED."
+          },
+          "response": []
+        },
+        {
+          "name": "Mock — Fail Payment",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{baseUrl}}/payments/mock/fail", "host": ["{{baseUrl}}"], "path": ["payments", "mock", "fail"] },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"orderId\": \"{{orderId}}\"\n}"
+            },
+            "description": "Marks a PENDING order as EXPIRED and releases reserved seats back to AVAILABLE."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Theaters",
+      "item": [
+        {
+          "name": "Theaters Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/theaters/health", "host": ["{{baseUrl}}"], "path": ["theaters", "health"] },
+            "description": "Theaters module health check."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Halls",
+      "item": [
+        {
+          "name": "Halls Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/halls/health", "host": ["{{baseUrl}}"], "path": ["halls", "health"] },
+            "description": "Halls module health check."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Promo Codes",
+      "item": [
+        {
+          "name": "Promo Codes Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/promo-codes/health", "host": ["{{baseUrl}}"], "path": ["promo-codes", "health"] },
+            "description": "Promo codes module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Promocodes Health (legacy path)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/promocodes/health", "host": ["{{baseUrl}}"], "path": ["promocodes", "health"] },
+            "description": "Legacy promocodes module health check."
+          },
+          "response": []
+        }
+      ]
+    },
+
+    {
+      "name": "Admin",
+      "description": "All requests in this folder require:\nAuthorization: Bearer {{accessToken}} (Admin role)",
+      "item": [
+        {
+          "name": "Stats",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/admin/stats", "host": ["{{baseUrl}}"], "path": ["admin", "stats"] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Platform-wide booking statistics (total orders, revenue, seat utilization, etc.)."
+          },
+          "response": []
+        },
+        {
+          "name": "Active Reservations",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/admin/reservations/active", "host": ["{{baseUrl}}"], "path": ["admin", "reservations", "active"] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "List all ShowSeats currently in RESERVED status."
+          },
+          "response": []
+        },
+        {
+          "name": "Pending Orders",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/admin/orders/pending", "host": ["{{baseUrl}}"], "path": ["admin", "orders", "pending"] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "List all orders with state = PENDING."
+          },
+          "response": []
+        },
+        {
+          "name": "Audit Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/audit-logs?page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "audit-logs"],
+              "query": [
+                { "key": "page",  "value": "1" },
+                { "key": "limit", "value": "50" }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+            "description": "Paginated admin action audit log."
+          },
+          "response": []
+        },
+
+        {
+          "name": "Events",
+          "item": [
+            {
+              "name": "Upload Event Poster",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/events/upload-poster", "host": ["{{baseUrl}}"], "path": ["admin", "events", "upload-poster"] },
+                "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [{ "key": "file", "type": "file", "src": "/path/to/poster.jpg" }]
+                },
+                "description": "Upload an event poster image. Returns { imageUrl }. Stored in /uploads/events/."
+              },
+              "response": []
+            },
+            {
+              "name": "Create Event",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/events", "host": ["{{baseUrl}}"], "path": ["admin", "events"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"The Dark Knight\",\n  \"slug\": \"the-dark-knight\",\n  \"releaseType\": \"THEATRICAL\",\n  \"trailerVideoLink\": \"https://youtube.com/watch?v=example\",\n  \"status\": \"NOW_SELLING\",\n  \"description\": \"When the menace known as the Joker wreaks havoc on Gotham...\",\n  \"location\": \"Sydney\",\n  \"organizer\": \"Warner Bros\",\n  \"type\": \"MOVIE\",\n  \"cardImage\": \"/uploads/events/dark-knight-card.jpg\",\n  \"bannerImage\": \"/uploads/events/dark-knight-banner.jpg\",\n  \"releaseDate\": \"2026-04-01T00:00:00.000Z\",\n  \"duration\": \"152 min\",\n  \"eventCurrency\": \"AUD\"\n}"
+                },
+                "description": "Create a new cinema event."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json().data;",
+                      "if (data && data.id) {",
+                      "  pm.collectionVariables.set('eventId', data.id);",
+                      "  console.log('eventId set:', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Event",
+              "request": {
+                "method": "PATCH",
+                "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"UPCOMING\",\n  \"description\": \"Updated description.\"\n}"
+                },
+                "description": "Partially update an existing event by ID."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Event",
+              "request": {
+                "method": "DELETE",
+                "url": { "raw": "{{baseUrl}}/admin/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["admin", "events", "{{eventId}}"] },
+                "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+                "description": "Soft-delete an event by ID."
+              },
+              "response": []
+            }
+          ]
+        },
+
+        {
+          "name": "Shows",
+          "item": [
+            {
+              "name": "Create Show",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/shows", "host": ["{{baseUrl}}"], "path": ["admin", "shows"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"eventId\": \"{{eventId}}\",\n  \"hallId\": \"{{hallId}}\",\n  \"theaterId\": \"{{theaterId}}\",\n  \"cityId\": \"<cityId>\",\n  \"stateId\": \"<stateId>\",\n  \"countryId\": \"<countryId>\",\n  \"date\": \"2026-04-05T00:00:00.000Z\",\n  \"startTime\": \"19:30\",\n  \"endTime\": \"22:00\"\n}"
+                },
+                "description": "Schedule a show for an event at a specific hall and time."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json().data;",
+                      "if (data && data.id) {",
+                      "  pm.collectionVariables.set('showId', data.id);",
+                      "  console.log('showId set:', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Show",
+              "request": {
+                "method": "PATCH",
+                "url": { "raw": "{{baseUrl}}/admin/shows/{{showId}}", "host": ["{{baseUrl}}"], "path": ["admin", "shows", "{{showId}}"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"startTime\": \"20:00\",\n  \"endTime\": \"22:30\"\n}"
+                },
+                "description": "Update show time or other properties."
+              },
+              "response": []
+            }
+          ]
+        },
+
+        {
+          "name": "Theaters",
+          "item": [
+            {
+              "name": "Create Theater",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/theaters", "host": ["{{baseUrl}}"], "path": ["admin", "theaters"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"Event Cinemas George Street\",\n  \"address\": \"505 George St\",\n  \"cityId\": \"<cityId>\",\n  \"stateId\": \"<stateId>\",\n  \"countryId\": \"<countryId>\",\n  \"zipCode\": \"2000\"\n}"
+                },
+                "description": "Create a new cinema theater."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json().data;",
+                      "if (data && data.id) {",
+                      "  pm.collectionVariables.set('theaterId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "Halls",
+          "item": [
+            {
+              "name": "Create Hall",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/halls", "host": ["{{baseUrl}}"], "path": ["admin", "halls"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"theaterId\": \"{{theaterId}}\",\n  \"name\": \"Hall A\",\n  \"numberOfRows\": 10,\n  \"numberOfColumns\": 20\n}"
+                },
+                "description": "Create a hall (screen) inside a theater."
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json().data;",
+                      "if (data && data.id) {",
+                      "  pm.collectionVariables.set('hallId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+
+        {
+          "name": "Hall Seats",
+          "item": [
+            {
+              "name": "Create Hall Seat",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/hall-seats", "host": ["{{baseUrl}}"], "path": ["admin", "hall-seats"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"hallId\": \"{{hallId}}\",\n  \"seatId\": \"A1\",\n  \"seatName\": \"A1\",\n  \"row\": 1,\n  \"column\": 1,\n  \"seatType\": \"STANDARD\"\n}"
+                },
+                "description": "Add an individual seat to a hall layout.\nSeat types: KIDS | WHEELCHAIR | STANDARD | RECLINER | PREMIUM | STAIR | UNAVAILABLE"
+              },
+              "response": []
+            },
+            {
+              "name": "Hall Seats Health",
+              "request": {
+                "method": "GET",
+                "url": { "raw": "{{baseUrl}}/hall-seats/health", "host": ["{{baseUrl}}"], "path": ["hall-seats", "health"] },
+                "description": "Hall seats module health check."
+              },
+              "response": []
+            }
+          ]
+        },
+
+        {
+          "name": "Promo Codes (Admin)",
+          "item": [
+            {
+              "name": "Create Promo Code",
+              "request": {
+                "method": "POST",
+                "url": { "raw": "{{baseUrl}}/admin/promo-codes", "host": ["{{baseUrl}}"], "path": ["admin", "promo-codes"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"promoCode\": \"SAVE10\",\n  \"maxlimit\": 100,\n  \"discountType\": \"PERCENTAGE\",\n  \"discountAmount\": 10.00,\n  \"isActive\": true\n}"
+                },
+                "description": "Create a new promo code.\nDiscountType: PERCENTAGE | AMOUNT | FREE_TICKET"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "const data = pm.response.json().data;",
+                      "if (data && data.id) {",
+                      "  pm.collectionVariables.set('promoCodeId', data.id);",
+                      "}"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Update Promo Code",
+              "request": {
+                "method": "PATCH",
+                "url": { "raw": "{{baseUrl}}/admin/promo-codes/{{promoCodeId}}", "host": ["{{baseUrl}}"], "path": ["admin", "promo-codes", "{{promoCodeId}}"] },
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"isActive\": false\n}"
+                },
+                "description": "Enable or disable a promo code, update limit or discount."
+              },
+              "response": []
+            },
+            {
+              "name": "Delete Promo Code",
+              "request": {
+                "method": "DELETE",
+                "url": { "raw": "{{baseUrl}}/admin/promo-codes/{{promoCodeId}}", "host": ["{{baseUrl}}"], "path": ["admin", "promo-codes", "{{promoCodeId}}"] },
+                "header": [{ "key": "Authorization", "value": "Bearer {{accessToken}}" }],
+                "description": "Soft-delete a promo code."
+              },
+              "response": []
+            }
+          ]
+        }
+      ]
+    },
+
+    {
+      "name": "Miscellaneous / Health Stubs",
+      "item": [
+        {
+          "name": "Customers Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/customers/health", "host": ["{{baseUrl}}"], "path": ["customers", "health"] },
+            "description": "Customers module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Employees Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/employees/health", "host": ["{{baseUrl}}"], "path": ["employees", "health"] },
+            "description": "Employees module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Seats Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/seats/health", "host": ["{{baseUrl}}"], "path": ["seats", "health"] },
+            "description": "Seats module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Countries Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/countries/health", "host": ["{{baseUrl}}"], "path": ["countries", "health"] },
+            "description": "Countries module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "States Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/states/health", "host": ["{{baseUrl}}"], "path": ["states", "health"] },
+            "description": "States module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Cities Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/cities/health", "host": ["{{baseUrl}}"], "path": ["cities", "health"] },
+            "description": "Cities module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Ads Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/ads/health", "host": ["{{baseUrl}}"], "path": ["ads", "health"] },
+            "description": "Ads module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Hero Sliders Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/hero-sliders/health", "host": ["{{baseUrl}}"], "path": ["hero-sliders", "health"] },
+            "description": "Hero sliders module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Producers Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/producers/health", "host": ["{{baseUrl}}"], "path": ["producers", "health"] },
+            "description": "Producers module health check."
+          },
+          "response": []
+        },
+        {
+          "name": "Toofan Health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/toofan/health", "host": ["{{baseUrl}}"], "path": ["toofan", "health"] },
+            "description": "Toofan (special event) module health check."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

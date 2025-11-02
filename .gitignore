@@ -1,0 +1,75 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+pids/
+*.pid
+
+# Runtime environment
+.env
+.env.*
+.env.local
+.env.development.local
+.env.test
+.env.production
+
+# Prisma local DB
+prisma/dev.db
+prisma/.env
+
+# Uploads and generated assets
+uploads/
+uploads/**
+
+# Coverage and test output
+coverage/
+*.lcov
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# macOS
+.DS_Store
+
+# Misc
+*.local
+
+# TypeScript
+*.d.ts
+*.js.map
+
+# Docker
+.dockerignore
+
+# Dependency manager caches
+.pnpm-store/
+
+# Optional: lockfiles - remove if you want to track lockfile
+# package-lock.json
+# yarn.lock
+
+# Temporary files
+tmp/
+temp/
+
+# Secrets
+secrets/
+
+# Ignore coverage snapshot files from jest
+coverage/
