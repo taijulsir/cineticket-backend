@@ -1,0 +1,15 @@
+-- Migration guide: old duplicated show_seats -> new two-level seat architecture
+-- 1) Ensure hall_seats has seat_type filled from legacy status values.
+-- 2) Add new show_seats columns: hall_seat_id, reserved_until, status.
+-- 3) Backfill hall_seat_id by matching show.hall_id + seat coordinates.
+-- 4) Map legacy states:
+--    is_booked = true                 -> BOOKED
+--    is_temporary_booked = true
+--      and temporary_booked_time > now() -> RESERVED
+--    otherwise                        -> AVAILABLE
+-- 5) Drop legacy columns after verification: row, column, seat_name, is_booked, is_temporary_booked, temporary_booked_time.
+-- 6) Add constraints/indexes:
+--    UNIQUE(show_id, hall_seat_id)
+--    INDEX(show_id, status)
+-- 7) Enforce sales integrity:
+--    CREATE UNIQUE INDEX unique_active_seat ON order_items(seat_id) WHERE is_active = true;
