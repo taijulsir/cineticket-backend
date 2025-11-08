@@ -1,0 +1,621 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Admin
+  Employee
+  Customer
+}
+
+enum EventReleaseType {
+  PRIVATE_SCREEN
+  THEATRICAL
+}
+
+enum EventStatus {
+  NOW_SELLING
+  UPCOMING
+  VOTE_TO_BRING
+  PAST
+}
+
+enum EventType {
+  MOVIE
+  OTHERS
+}
+
+enum SeatCategory {
+  KIDS
+  WHEELCHAIR
+  STANDARD
+  RECLINER
+  PREMIUM
+  STAIR
+  UNAVAILABLE
+}
+
+enum SeatStatus {
+  AVAILABLE
+  RESERVED
+  BOOKED
+  BLOCKED
+}
+
+enum PromoDiscountType {
+  PERCENTAGE
+  AMOUNT
+  FREE_TICKET
+}
+
+enum OrderState {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  ARCHIVED
+  EXPIRED
+}
+
+model Customer {
+  id            String         @id @default(uuid()) @db.Uuid
+  name          String
+  email         String         @unique
+  passwordHash  String         @map("password_hash")
+  mobile        String?        @db.VarChar(32)
+  dp            String?
+  gender        String?
+  isVerified    Boolean        @default(false) @map("is_verified")
+  isSocial      Boolean        @default(false) @map("is_social")
+  googleId      String?        @map("google_id")
+  country       String?
+  city          String?
+  street        String?
+  zipCode       String?        @map("zip_code")
+  role          Role           @default(Customer)
+  orders        Order[]
+  pendingOrders PendingOrder[]
+  eventUpvotes  EventUpvote[]
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  deletedAt     DateTime?      @map("deleted_at")
+
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model Employee {
+  id             String          @id @default(uuid()) @db.Uuid
+  name           String
+  email          String          @unique
+  passwordHash   String          @map("password_hash")
+  role           Role
+  dp             String?
+  invites        EmployeeInvite[]
+  producedEvents EventProducer[]
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+  deletedAt      DateTime?       @map("deleted_at")
+
+  @@index([createdAt])
+  @@map("employees")
+}
+
+model EmployeeInvite {
+  id         String    @id @default(uuid()) @db.Uuid
+  employeeId String    @map("employee_id") @db.Uuid
+  email      String    @unique
+  level      Role
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([employeeId])
+  @@index([createdAt])
+  @@map("employee_invites")
+}
+
+model Country {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  isArchive Boolean   @default(false) @map("is_archive")
+  states    State[]
+  theaters  Theater[]
+  shows     Show[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([isArchive])
+  @@map("countries")
+}
+
+model State {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  countryId String    @map("country_id") @db.Uuid
+  isArchive Boolean   @default(false) @map("is_archive")
+  country   Country   @relation(fields: [countryId], references: [id])
+  cities    City[]
+  theaters  Theater[]
+  shows     Show[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([countryId])
+  @@index([isArchive])
+  @@map("states")
+}
+
+model City {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  stateId   String    @map("state_id") @db.Uuid
+  isArchive Boolean   @default(false) @map("is_archive")
+  state     State     @relation(fields: [stateId], references: [id])
+  theaters  Theater[]
+  shows     Show[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([stateId])
+  @@index([isArchive])
+  @@map("cities")
+}
+
+model Theater {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  countryId String    @map("country_id") @db.Uuid
+  address   String
+  cityId    String    @map("city_id") @db.Uuid
+  stateId   String    @map("state_id") @db.Uuid
+  zipCode   String    @map("zip_code")
+  isArchive Boolean   @default(false) @map("is_archive")
+  country   Country   @relation(fields: [countryId], references: [id])
+  city      City      @relation(fields: [cityId], references: [id])
+  state     State     @relation(fields: [stateId], references: [id])
+  halls     Hall[]
+  shows     Show[]
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([countryId])
+  @@index([cityId])
+  @@index([stateId])
+  @@index([isArchive])
+  @@map("theaters")
+}
+
+model Hall {
+  id              String    @id @default(uuid()) @db.Uuid
+  theaterId       String    @map("theater_id") @db.Uuid
+  name            String
+  numberOfRows    Int       @map("number_of_rows")
+  numberOfColumns Int       @map("number_of_columns")
+  isArchive       Boolean   @default(false) @map("is_archive")
+  theater         Theater   @relation(fields: [theaterId], references: [id])
+  hallSeats       HallSeat[]
+  shows           Show[]
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  @@index([theaterId])
+  @@index([isArchive])
+  @@map("halls")
+}
+
+model HallSeat {
+  id        String      @id @default(uuid()) @db.Uuid
+  hallId    String      @map("hall_id") @db.Uuid
+  seatName  String?     @map("seat_name")
+  seatId    String      @map("seat_id")
+  row       Int
+  column    Int
+  seatType  SeatCategory @map("seat_type")
+  hall      Hall        @relation(fields: [hallId], references: [id])
+  showSeats ShowSeat[]
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  deletedAt DateTime?   @map("deleted_at")
+
+  @@unique([hallId, row, column])
+  @@unique([hallId, seatId])
+  @@index([hallId])
+  @@map("hall_seats")
+}
+
+model Event {
+  id               String           @id @default(uuid()) @db.Uuid
+  name             String
+  slug             String           @unique
+  releaseType      EventReleaseType @map("release_type")
+  theatricalLink   String?          @map("theatrical_link")
+  trailerVideoLink String           @map("trailer_video_link")
+  status           EventStatus
+  description      String
+  location         String
+  organizer        String
+  type             EventType
+  voteOfBring      Int              @default(0) @map("vote_of_bring")
+  cardImage        String           @map("card_image")
+  bannerImage      String           @map("banner_image")
+  releaseDate      DateTime         @map("release_date")
+  duration         String
+  eventCurrency    String           @default("AUD") @map("event_currency")
+  isArchive        Boolean          @default(false) @map("is_archive")
+  crews            Crew[]
+  prices           EventPrice[]
+  shows            Show[]
+  upvotes          EventUpvote[]
+  heroSliders      HeroSlider[]
+  producers        EventProducer[]
+  orders           Order[]
+  pendingOrders    PendingOrder[]
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+
+  @@index([status, isArchive])
+  @@index([releaseDate])
+  @@index([createdAt])
+  @@map("events")
+}
+
+model Crew {
+  id        String    @id @default(uuid()) @db.Uuid
+  eventId   String    @map("event_id") @db.Uuid
+  name      String
+  type      String
+  isArchive Boolean   @default(false) @map("is_archive")
+  event     Event     @relation(fields: [eventId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([eventId])
+  @@index([isArchive])
+  @@map("crews")
+}
+
+model EventPrice {
+  id        String    @id @default(uuid()) @db.Uuid
+  eventId   String    @map("event_id") @db.Uuid
+  price     Decimal   @db.Decimal(10, 2)
+  status    String
+  event     Event     @relation(fields: [eventId], references: [id])
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([eventId])
+  @@map("event_prices")
+}
+
+model Show {
+  id               String      @id @default(uuid()) @db.Uuid
+  eventId          String      @map("event_id") @db.Uuid
+  hallId           String      @map("hall_id") @db.Uuid
+  cityId           String      @map("city_id") @db.Uuid
+  stateId          String      @map("state_id") @db.Uuid
+  countryId        String      @map("country_id") @db.Uuid
+  theaterId        String      @map("theater_id") @db.Uuid
+  startTime        String      @map("start_time")
+  endTime          String?     @map("end_time")
+  date             DateTime
+  totalSeats       Int?        @map("total_seats")
+  totalSoldTickets Int?        @map("total_sold_tickets")
+  isArchive        Boolean     @default(false) @map("is_archive")
+  event            Event       @relation(fields: [eventId], references: [id])
+  hall             Hall        @relation(fields: [hallId], references: [id])
+  city             City        @relation(fields: [cityId], references: [id])
+  state            State       @relation(fields: [stateId], references: [id])
+  country          Country     @relation(fields: [countryId], references: [id])
+  theater          Theater     @relation(fields: [theaterId], references: [id])
+  showSeats        ShowSeat[]
+  prices           ShowPrice[]
+  orders           Order[]
+  pendingOrders    PendingOrder[]
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  deletedAt        DateTime?   @map("deleted_at")
+
+  @@index([eventId, date])
+  @@index([cityId, stateId, countryId])
+  @@index([theaterId, hallId, date])
+  @@index([createdAt])
+  @@map("shows")
+}
+
+model ShowSeat {
+  id            String      @id @default(uuid()) @db.Uuid
+  showId        String      @map("show_id") @db.Uuid
+  hallSeatId    String      @map("hall_seat_id") @db.Uuid
+  status        SeatStatus  @default(AVAILABLE)
+  reservedUntil DateTime?   @map("reserved_until")
+  show          Show        @relation(fields: [showId], references: [id])
+  hallSeat      HallSeat    @relation(fields: [hallSeatId], references: [id])
+  orderItems    OrderItem[]
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  deletedAt     DateTime?   @map("deleted_at")
+
+  @@unique([showId, hallSeatId])
+  @@index([showId, status])
+  @@index([showId, reservedUntil])
+  @@index([createdAt])
+  @@map("show_seats")
+}
+
+model ShowPrice {
+  id        String       @id @default(uuid()) @db.Uuid
+  showId    String       @map("show_id") @db.Uuid
+  price     Decimal      @db.Decimal(10, 2)
+  status    SeatCategory
+  show      Show         @relation(fields: [showId], references: [id])
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  deletedAt DateTime?    @map("deleted_at")
+
+  @@index([showId])
+  @@map("show_prices")
+}
+
+model Promocode {
+  id             String            @id @default(uuid()) @db.Uuid
+  promoCode      String            @unique @map("promo_code")
+  maxlimit       Int
+  usageCount     Int               @default(0) @map("usage_count")
+  discountType   PromoDiscountType @map("discount_type")
+  discountAmount Decimal           @db.Decimal(10, 2) @map("discount_amount")
+  isActive       Boolean           @default(true) @map("is_active")
+  orders         Order[]
+  pendingOrders  PendingOrder[]
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+  deletedAt      DateTime?         @map("deleted_at")
+
+  @@index([isActive])
+  @@index([usageCount])
+  @@index([createdAt])
+  @@map("promocodes")
+}
+
+model Order {
+  id            String      @id @default(uuid()) @db.Uuid
+  orderCode     String      @unique @map("order_code")
+  name          String?
+  email         String?
+  mobileNumber  String?     @map("mobile_number")
+  customerId    String?     @map("customer_id") @db.Uuid
+  eventId       String      @map("event_id") @db.Uuid
+  showId        String      @map("show_id") @db.Uuid
+  promoCodeId   String?     @map("promo_code_id") @db.Uuid
+  discount      Decimal?    @db.Decimal(10, 2)
+  total         Decimal     @db.Decimal(10, 2)
+  paymentMethod String?     @map("payment_method")
+  transactionId String?     @map("transaction_id")
+  isActive      Boolean     @default(true) @map("is_active")
+  state         OrderState  @default(PENDING)
+  customer      Customer?   @relation(fields: [customerId], references: [id])
+  event         Event       @relation(fields: [eventId], references: [id])
+  show          Show        @relation(fields: [showId], references: [id])
+  promoCode     Promocode?  @relation(fields: [promoCodeId], references: [id])
+  items         OrderItem[]
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  deletedAt     DateTime?   @map("deleted_at")
+
+  @@index([customerId, createdAt])
+  @@index([eventId])
+  @@index([showId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String      @id @default(uuid()) @db.Uuid
+  orderId   String      @map("order_id") @db.Uuid
+  seatId    String      @map("seat_id") @db.Uuid
+  price     Decimal     @db.Decimal(10, 2)
+  isActive  Boolean     @default(true) @map("is_active")
+  order     Order       @relation(fields: [orderId], references: [id])
+  seat      ShowSeat    @relation(fields: [seatId], references: [id])
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  deletedAt DateTime?   @map("deleted_at")
+
+  @@index([orderId])
+  @@index([seatId])
+  @@index([isActive])
+  @@index([createdAt])
+  @@map("order_items")
+}
+
+model PendingOrder {
+  id              String      @id @default(uuid()) @db.Uuid
+  name            String?
+  email           String?
+  mobileNumber    String?     @map("mobile_number")
+  customerId      String?     @map("customer_id") @db.Uuid
+  eventId         String      @map("event_id") @db.Uuid
+  selectedShowsId String      @map("selected_shows_id") @db.Uuid
+  promoCodeId     String?     @map("promo_code_id") @db.Uuid
+  discount        Decimal?    @db.Decimal(10, 2)
+  total           Decimal     @db.Decimal(10, 2)
+  paymentMethod   String?     @map("payment_method")
+  transactionId   String?     @map("transaction_id")
+  status          String      @default("pending")
+  stripeSessionId String?     @unique @map("stripe_session_id")
+  ticketItems     Json        @map("ticket_items")
+  customer        Customer?   @relation(fields: [customerId], references: [id])
+  event           Event       @relation(fields: [eventId], references: [id])
+  selectedShows   Show        @relation(fields: [selectedShowsId], references: [id])
+  promoCode       Promocode?  @relation(fields: [promoCodeId], references: [id])
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+  deletedAt       DateTime?   @map("deleted_at")
+
+  @@index([customerId])
+  @@index([eventId])
+  @@index([selectedShowsId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("pending_orders")
+}
+
+model EventUpvote {
+  id         String    @id @default(uuid()) @db.Uuid
+  eventId    String    @map("event_id") @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  event      Event     @relation(fields: [eventId], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@unique([eventId, customerId])
+  @@index([eventId])
+  @@index([customerId])
+  @@map("event_upvotes")
+}
+
+model EventProducer {
+  id         String    @id @default(uuid()) @db.Uuid
+  eventId    String    @map("event_id") @db.Uuid
+  producerId String    @map("producer_id") @db.Uuid
+  event      Event     @relation(fields: [eventId], references: [id])
+  producer   Employee  @relation(fields: [producerId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@unique([eventId, producerId])
+  @@index([eventId])
+  @@index([producerId])
+  @@map("event_producers")
+}
+
+model HeroSlider {
+  id         String    @id @default(uuid()) @db.Uuid
+  eventId    String    @map("event_id") @db.Uuid
+  precedence Int
+  isArchive  Boolean   @default(false) @map("is_archive")
+  event      Event     @relation(fields: [eventId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([eventId])
+  @@index([precedence])
+  @@map("hero_sliders")
+}
+
+model SocialLink {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String
+  visibility Boolean
+  link       String
+  isArchive  Boolean   @default(false) @map("is_archive")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([visibility])
+  @@map("social_links")
+}
+
+model AppSetting {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String
+  isCategoryFeatured Boolean   @map("is_category_featured")
+  image              String
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  deletedAt          DateTime? @map("deleted_at")
+
+  @@map("app_settings")
+}
+
+model Ads {
+  id         String    @id @default(uuid()) @db.Uuid
+  poster     String
+  link       String
+  precedence Int
+  isArchive  Boolean   @default(false) @map("is_archive")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([precedence])
+  @@map("ads")
+}
+
+model TicketCategory {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  color     String
+  isArchive Boolean   @default(false) @map("is_archive")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([isArchive])
+  @@map("ticket_categories")
+}
+
+model ToofanAtHoytsInAustralia {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String?
+  mobileNumber String?   @map("mobile_number")
+  email        String?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  @@map("toofan_at_hoyts_in_australia")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  tokenHash  String    @map("token_hash")
+  role       Role
+  device     String?
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  @@index([userId])
+  @@index([role])
+  @@index([ipAddress])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
