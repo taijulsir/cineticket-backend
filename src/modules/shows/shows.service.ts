@@ -47,7 +47,7 @@ export class ShowsService {
 
   async getSeatMap(showId: string) {
     const layout = await this.getSeats(showId);
-    const grouped = new Map<number, { row: string; seats: typeof layout }>();
+    const grouped = new Map<string | number, { row: string; seats: typeof layout }>();
     for (const seat of layout) {
       const key = seat.row;
       if (!grouped.has(key)) grouped.set(key, { row: this.toRowLabel(key), seats: [] });
@@ -56,7 +56,9 @@ export class ShowsService {
     return { rows: Array.from(grouped.values()) };
   }
 
-  private toRowLabel(row: number) {
+  private toRowLabel(row: number | string) {
+    if (typeof row === 'string') return row;
+    if (!Number.isFinite(row)) return String(row);
     return String.fromCharCode(64 + row);
   }
 }
