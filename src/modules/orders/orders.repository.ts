@@ -106,7 +106,10 @@ export class OrdersRepository {
   }
 
   async findById(db: DbClient, orderId: string) {
-    return db.order.findUnique({ where: { id: orderId }, include: { items: { include: { seat: true } } } });
+    return db.order.findUnique({
+      where: { id: orderId },
+      include: { event: { select: { id: true, slug: true, name: true } }, items: { include: { seat: true } } },
+    });
   }
 
   async list(db: DbClient, where: Prisma.OrderWhereInput, skip: number, take: number) {

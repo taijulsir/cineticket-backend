@@ -20,6 +20,34 @@ export class AuthRepository {
     return this.prisma.customer.findFirst({ where: { email, deletedAt: null } });
   }
 
+  findCustomerByGoogleId(googleId: string) {
+    return this.prisma.customer.findFirst({ where: { googleId, deletedAt: null } });
+  }
+
+  findCustomerById(id: string) {
+    return this.prisma.customer.findFirst({ where: { id, deletedAt: null } });
+  }
+
+  createCustomer(data: {
+    name: string;
+    email: string;
+    passwordHash: string;
+    mobile?: string;
+    googleId?: string;
+    dp?: string;
+    isSocial?: boolean;
+    isVerified?: boolean;
+  }) {
+    return this.prisma.customer.create({ data });
+  }
+
+  updateCustomerGoogleId(id: string, googleId: string, dp?: string) {
+    return this.prisma.customer.update({
+      where: { id },
+      data: { googleId, isSocial: true, ...(dp ? { dp } : {}) },
+    });
+  }
+
   createRefreshToken(userId: string, role: Role, expiresAt: Date, session: SessionMeta) {
     return this.prisma.refreshToken.create({
       data: { userId, role, expiresAt, tokenHash: '', ...session },

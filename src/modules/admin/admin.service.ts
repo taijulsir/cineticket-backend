@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadGatewayException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { EventReleaseType, EventStatus, EventType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma/prisma.service';
 import { OrdersService } from '../orders/orders.service';
 import {
@@ -23,7 +24,13 @@ import {
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService, private readonly ordersService: OrdersService) {}
+  private readonly logger = new Logger(AdminService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ordersService: OrdersService,
+    private readonly configService: ConfigService,
+  ) {}
 
   getActiveReservations() {
     return this.ordersService.listActiveReservations();
@@ -189,13 +196,129 @@ export class AdminService {
     return this.prisma.socialLink.update({ where: { id }, data: { isArchive: true, deletedAt: new Date() } });
   }
 
+  async searchMovies(title: string) {
+    if (!title?.trim()) return [];
+    const apiKey = this.configService.get<string>('TMDB_API_KEY');
+    if (!apiKey) throw new BadGatewayException('TMDB_API_KEY is not configured');
+    const url = new URL('https://api.themoviedb.org/3/search/movie');
+    url.searchParams.set('api_key', apiKey);
+    url.searchParams.set('query', title.trim());
+    url.searchParams.set('include_adult', 'false');
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new BadGatewayException('Failed to search TMDB movies');
+    const payload = (await response.json()) as { results?: Array<Record<string, any>> };
+    return (payload.results ?? []).map((movie) => ({
+      id: String(movie.id),
+      title: movie.title,
+      year: movie.release_date ? String(movie.release_date).slice(0, 4) : null,
+      posterUrl: movie.poster_path ? `https://image.tmdb.org/t/p/w500${movie.poster_path}` : null,
+      backdropUrl: movie.backdrop_path ? `https://image.tmdb.org/t/p/original${movie.backdrop_path}` : null,
+      rating: movie.vote_average ?? 0,
+      releaseDate: movie.release_date ?? null,
+    }));
+  }
+
+  async importMovie(movieId: string) {
+    const apiKey = this.configService.get<string>('TMDB_API_KEY');
+    if (!apiKey) throw new BadGatewayException('TMDB_API_KEY is not configured');
+    const [details, videos] = await Promise.all([
+      this.fetchTmdb(`/movie/${movieId}`, apiKey),
+      this.fetchTmdb(`/movie/${movieId}/videos`, apiKey),
+    ]);
+    const payload = this.mapTmdbMovieToEvent(details, videos.results ?? [], movieId);
+    const slug = payload.slug;
+    const existing = await this.prisma.event.findUnique({ where: { slug } });
+    const event = existing
+      ? await this.prisma.event.update({ where: { id: existing.id }, data: payload })
+      : await this.prisma.event.create({ data: payload });
+    await this.syncEventGenres(event.id, this.extractGenreNames(details));
+    return event;
+  }
+
+  async bulkRefreshMovies() {
+    const apiKey = this.configService.get<string>('TMDB_API_KEY');
+    if (!apiKey) throw new BadGatewayException('TMDB_API_KEY is not configured');
+
+    await this.prisma.event.deleteMany({
+      where: { type: EventType.MOVIE, organizer: 'TMDB', shows: { none: {} } },
+    });
+
+    const endpoints = ['/movie/popular', '/movie/top_rated', '/movie/now_playing', '/movie/upcoming'];
+    const pages = [1, 2, 3];
+    const listingResponses = await Promise.all(
+      endpoints.flatMap((path) => pages.map((page) => this.fetchTmdb(path, apiKey, { page: String(page) }))),
+    );
+    const fetchedRows = listingResponses.flatMap((payload) => (payload.results ?? []) as Array<Record<string, any>>);
+    const movieIds = [...new Set(fetchedRows.map((row) => String(row.id)).filter(Boolean))];
+
+    const detailRows = await this.mapWithConcurrency(movieIds, 6, async (movieId) => {
+      const [details, videos] = await Promise.all([
+        this.fetchTmdb(`/movie/${movieId}`, apiKey),
+        this.fetchTmdb(`/movie/${movieId}/videos`, apiKey),
+      ]);
+      return {
+        payload: this.mapTmdbMovieToEvent(details, videos.results ?? [], movieId),
+        genres: this.extractGenreNames(details),
+      };
+    });
+
+    const uniquePayloadBySlug = new Map<string, { payload: Prisma.EventCreateManyInput; genres: string[] }>();
+    for (const item of detailRows) {
+      if (!item) continue;
+      if (!uniquePayloadBySlug.has(item.payload.slug)) uniquePayloadBySlug.set(item.payload.slug, item);
+    }
+    const prepared = [...uniquePayloadBySlug.values()];
+    const toInsert = prepared.map((item) => item.payload);
+    const inserted = toInsert.length
+      ? await this.prisma.event.createMany({ data: toInsert, skipDuplicates: true })
+      : { count: 0 };
+
+    const insertedRows = await this.prisma.event.findMany({
+      where: { slug: { in: toInsert.map((item) => item.slug) } },
+      select: { id: true, slug: true },
+    });
+    const idBySlug = new Map(insertedRows.map((row) => [row.slug, row.id]));
+    await Promise.all(
+      prepared.map(async (item) => {
+        const eventId = idBySlug.get(item.payload.slug);
+        if (!eventId) return;
+        await this.syncEventGenres(eventId, item.genres);
+      }),
+    );
+
+    const statusDistribution = toInsert.reduce(
+      (acc, item) => {
+        if (item.status === EventStatus.NOW_SELLING) acc.nowShowing += 1;
+        else if (item.status === EventStatus.UPCOMING) acc.comingSoon += 1;
+        else acc.past += 1;
+        return acc;
+      },
+      { nowShowing: 0, comingSoon: 0, past: 0 },
+    );
+    const skipped = prepared.length - inserted.count;
+
+    this.logger.log(
+      `TMDB bulk refresh fetched=${movieIds.length} prepared=${prepared.length} inserted=${inserted.count} skipped=${skipped} distribution=${JSON.stringify(statusDistribution)}`,
+    );
+
+    return {
+      fetched: movieIds.length,
+      imported: inserted.count,
+      skipped,
+      statusDistribution,
+    };
+  }
+
   createPromoCode(dto: CreateAdminPromoCodeDto) {
-    const { usageCount, ...rest } = dto;
+    const { usageCount, minOrderAmount, startsAt, expiresAt, ...rest } = dto;
     return this.prisma.promocode.create({
       data: {
         ...rest,
         usageCount: usageCount ?? 0,
         discountAmount: new Prisma.Decimal(dto.discountAmount),
+        minOrderAmount: new Prisma.Decimal(minOrderAmount ?? 0),
+        ...(startsAt && { startsAt: new Date(startsAt) }),
+        ...(expiresAt && { expiresAt: new Date(expiresAt) }),
       },
     });
   }
@@ -210,7 +333,13 @@ export class AdminService {
   updatePromoCode(id: string, dto: UpdateAdminPromoCodeDto) {
     return this.prisma.promocode.update({
       where: { id },
-      data: { ...dto, ...(dto.discountAmount !== undefined && { discountAmount: new Prisma.Decimal(dto.discountAmount) }) },
+      data: {
+        ...dto,
+        ...(dto.discountAmount !== undefined && { discountAmount: new Prisma.Decimal(dto.discountAmount) }),
+        ...(dto.minOrderAmount !== undefined && { minOrderAmount: new Prisma.Decimal(dto.minOrderAmount) }),
+        ...(dto.startsAt !== undefined && { startsAt: dto.startsAt ? new Date(dto.startsAt) : null }),
+        ...(dto.expiresAt !== undefined && { expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null }),
+      },
     });
   }
 
@@ -280,5 +409,141 @@ export class AdminService {
     });
     if (!theater) throw new NotFoundException('Theater not found');
     return theater;
+  }
+
+  private generateSlug(input: string) {
+    return input
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)+/g, '');
+  }
+
+  private resolveStatus(releaseDate: Date) {
+    const now = new Date();
+    if (releaseDate > now) return EventStatus.UPCOMING;
+    const diffDays = Math.floor((now.getTime() - releaseDate.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 90) return EventStatus.NOW_SELLING;
+    return EventStatus.PAST;
+  }
+
+  private pickTrailer(videos: Array<Record<string, any>>) {
+    const youtube = videos.filter((video) => video.site === 'YouTube');
+    const best =
+      youtube.find((video) => video.type === 'Trailer' && video.official) ??
+      youtube.find((video) => video.type === 'Trailer') ??
+      youtube[0];
+    return best?.key ? `https://www.youtube.com/watch?v=${best.key}` : null;
+  }
+
+  private mapTmdbMovieToEvent(
+    details: Record<string, any>,
+    videos: Array<Record<string, any>>,
+    movieId: string,
+  ): Prisma.EventCreateManyInput {
+    const trailer = this.pickTrailer(videos);
+    const title = String(details.title ?? `TMDB Movie ${movieId}`).trim();
+    const releaseDate = details.release_date ? new Date(details.release_date) : new Date();
+    const slug = this.generateSlug(`${title}-${movieId}`);
+    return {
+      name: title,
+      slug,
+      releaseType: EventReleaseType.THEATRICAL,
+      theatricalLink: details.homepage || null,
+      trailerVideoLink: trailer ?? 'https://www.youtube.com',
+      status: this.resolveStatus(releaseDate),
+      description: details.overview || `${title} imported from TMDB`,
+      location: this.mapLanguageCode(details.original_language),
+      organizer: 'TMDB',
+      type: EventType.MOVIE,
+      cardImage: details.poster_path
+        ? `https://image.tmdb.org/t/p/w500${details.poster_path}`
+        : 'https://via.placeholder.com/500x750?text=No+Poster',
+      bannerImage: details.backdrop_path
+        ? `https://image.tmdb.org/t/p/original${details.backdrop_path}`
+        : 'https://via.placeholder.com/1280x720?text=No+Backdrop',
+      releaseDate,
+      duration: details.runtime ? `${details.runtime} min` : 'N/A',
+      eventCurrency: 'AUD',
+      isArchive: false,
+    };
+  }
+
+  private extractGenreNames(details: Record<string, any>) {
+    const byObjects = Array.isArray(details.genres)
+      ? details.genres.map((item: Record<string, any>) => String(item?.name ?? '').trim()).filter(Boolean)
+      : [];
+    if (byObjects.length) return byObjects;
+    const byIds = Array.isArray(details.genre_ids)
+      ? details.genre_ids
+          .map((id: number) => this.genreNameById(id))
+          .filter((name): name is string => Boolean(name))
+      : [];
+    return [...new Set(byIds)];
+  }
+
+  private genreNameById(id: number) {
+    const map: Record<number, string> = {
+      28: 'Action',
+      12: 'Adventure',
+      16: 'Animation',
+      35: 'Comedy',
+      18: 'Drama',
+      878: 'Sci-Fi',
+      53: 'Thriller',
+      80: 'Crime',
+      36: 'History',
+    };
+    return map[id];
+  }
+
+  private mapLanguageCode(code?: string) {
+    const map: Record<string, string> = {
+      en: 'English',
+      hi: 'Hindi',
+      bn: 'Bangla',
+      es: 'Spanish',
+      fr: 'French',
+    };
+    const key = String(code ?? '').trim().toLowerCase();
+    if (!key) return 'Unknown';
+    return map[key] ?? key.toUpperCase();
+  }
+
+  private async syncEventGenres(eventId: string, genres: string[]) {
+    await this.prisma.crew.deleteMany({
+      where: { eventId, type: 'GENRE' },
+    });
+    if (!genres.length) return;
+    await this.prisma.crew.createMany({
+      data: genres.map((name) => ({ eventId, name, type: 'GENRE' })),
+      skipDuplicates: true,
+    });
+  }
+
+  private async mapWithConcurrency<TInput, TOutput>(
+    input: TInput[],
+    concurrency: number,
+    worker: (item: TInput) => Promise<TOutput>,
+  ) {
+    const results: TOutput[] = [];
+    let index = 0;
+    const run = async () => {
+      while (index < input.length) {
+        const current = index;
+        index += 1;
+        results[current] = await worker(input[current]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, concurrency) }, run));
+    return results;
+  }
+
+  private async fetchTmdb(path: string, apiKey: string, query: Record<string, string> = {}) {
+    const url = new URL(`https://api.themoviedb.org/3${path}`);
+    url.searchParams.set('api_key', apiKey);
+    Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new BadGatewayException(`TMDB request failed: ${path}`);
+    return (await response.json()) as Record<string, any>;
   }
 }

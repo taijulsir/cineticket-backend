@@ -3,6 +3,7 @@ import {
   EventReleaseType,
   EventStatus,
   EventType,
+  PromoCategory,
   PromoDiscountType,
   SeatCategory,
 } from '@prisma/client';
@@ -88,10 +89,15 @@ export class UpdateAdminHallSeatDto {
 
 export class CreateAdminPromoCodeDto {
   @ApiProperty() @IsString() promoCode!: string;
+  @ApiProperty({ enum: PromoCategory }) @IsEnum(PromoCategory) category!: PromoCategory;
+  @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiProperty() @IsInt() @Min(1) maxlimit!: number;
   @ApiPropertyOptional() @IsOptional() @IsInt() @Min(0) usageCount?: number;
   @ApiProperty({ enum: PromoDiscountType }) @IsEnum(PromoDiscountType) discountType!: PromoDiscountType;
   @ApiProperty() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) discountAmount!: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) minOrderAmount?: number;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() startsAt?: string;
+  @ApiPropertyOptional() @IsOptional() @IsDateString() expiresAt?: string;
   @ApiPropertyOptional() @IsOptional() @IsBoolean() isActive?: boolean;
 }
 

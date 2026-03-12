@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "PromoCategory" AS ENUM ('TICKET_DISCOUNTS', 'FOOD_SNACKS', 'PREMIUM_UPGRADES', 'STUDENT_OFFERS', 'WEEKEND_DEALS');
+
+-- AlterTable
+ALTER TABLE "promocodes" ADD COLUMN     "category" "PromoCategory" NOT NULL DEFAULT 'TICKET_DISCOUNTS';

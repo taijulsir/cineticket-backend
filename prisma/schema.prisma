@@ -8,7 +8,7 @@ datasource db {
 }
 
 enum Role {
-  Admin
+  Admin // This is Super Admin in business logic if we don't add more roles to the DB enum, or we can map them.
   Employee
   Customer
 }
@@ -53,12 +53,33 @@ enum PromoDiscountType {
   FREE_TICKET
 }
 
+enum PromoCategory {
+  TICKET_DISCOUNTS
+  FOOD_SNACKS
+  PREMIUM_UPGRADES
+  STUDENT_OFFERS
+  WEEKEND_DEALS
+}
+
 enum OrderState {
   PENDING
   CONFIRMED
   CANCELLED
   ARCHIVED
   EXPIRED
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  INVITED
+}
+
+enum EmployeeRole {
+  SUPER_ADMIN
+  ADMIN
+  MANAGER
+  STAFF
 }
 
 model Customer {
@@ -92,8 +113,15 @@ model Employee {
   id             String          @id @default(uuid()) @db.Uuid
   name           String
   email          String          @unique
-  passwordHash   String          @map("password_hash")
-  role           Role
+  passwordHash   String?         @map("password_hash") // Optional now because invited users don't have passwords yet
+  role           Role            // Kept for backward compatibility
+  employeeRole   EmployeeRole    @default(STAFF) @map("employee_role")
+  permissions    String[]        @default([])
+  status         EmployeeStatus  @default(INVITED)
+  isEmployee     Boolean         @default(true) @map("is_employee")
+  invitedById    String?         @map("invited_by_id") @db.Uuid
+  invitedBy      Employee?       @relation("EmployeeInvites", fields: [invitedById], references: [id])
+  invitesCreated Employee[]      @relation("EmployeeInvites")
   dp             String?
   invites        EmployeeInvite[]
   producedEvents EventProducer[]
@@ -105,17 +133,25 @@ model Employee {
   @@map("employees")
 }
 
-model EmployeeInvite {
-  id         String    @id @default(uuid()) @db.Uuid
-  employeeId String    @map("employee_id") @db.Uuid
-  email      String    @unique
-  level      Role
-  employee   Employee  @relation(fields: [employeeId], references: [id])
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
-  deletedAt  DateTime? @map("deleted_at")
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
 
-  @@index([employeeId])
+model EmployeeInvite {
+  id         String       @id @default(uuid()) @db.Uuid
+  email      String       @unique
+  role       EmployeeRole
+  token      String       @unique
+  expiresAt  DateTime     @map("expires_at")
+  invitedById String       @map("invited_by_id") @db.Uuid
+  invitedBy  Employee     @relation(fields: [invitedById], references: [id])
+  status     InviteStatus @default(PENDING)
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  @@index([invitedById])
   @@index([createdAt])
   @@map("employee_invites")
 }
@@ -373,10 +409,15 @@ model ShowPrice {
 model Promocode {
   id             String            @id @default(uuid()) @db.Uuid
   promoCode      String            @unique @map("promo_code")
+  category       PromoCategory     @default(TICKET_DISCOUNTS)
+  description    String?
   maxlimit       Int
   usageCount     Int               @default(0) @map("usage_count")
   discountType   PromoDiscountType @map("discount_type")
   discountAmount Decimal           @db.Decimal(10, 2) @map("discount_amount")
+  minOrderAmount Decimal           @default(0) @db.Decimal(10, 2) @map("min_order_amount")
+  startsAt       DateTime?         @map("starts_at")
+  expiresAt      DateTime?         @map("expires_at")
   isActive       Boolean           @default(true) @map("is_active")
   orders         Order[]
   pendingOrders  PendingOrder[]
@@ -386,6 +427,7 @@ model Promocode {
 
   @@index([isActive])
   @@index([usageCount])
+  @@index([expiresAt])
   @@index([createdAt])
   @@map("promocodes")
 }

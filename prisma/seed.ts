@@ -1,4 +1,15 @@
-import { EventReleaseType, EventStatus, EventType, OrderState, PrismaClient, PromoDiscountType, Role, SeatCategory, SeatStatus } from '@prisma/client';
+import {
+  EventReleaseType,
+  EventStatus,
+  EventType,
+  OrderState,
+  PrismaClient,
+  PromoCategory,
+  PromoDiscountType,
+  Role,
+  SeatCategory,
+  SeatStatus,
+} from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -125,15 +136,63 @@ async function main() {
     },
   });
 
-  const promo = await prisma.promocode.create({
-    data: {
-      promoCode: 'WELCOME10',
-      maxlimit: 100,
-      discountType: PromoDiscountType.PERCENTAGE,
-      discountAmount: 10,
-      isActive: true,
-    },
-  });
+  const promos = await prisma.$transaction([
+    prisma.promocode.create({
+      data: {
+        promoCode: 'WELCOME10',
+        category: PromoCategory.TICKET_DISCOUNTS,
+        description: 'Welcome discount on movie tickets',
+        maxlimit: 100,
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountAmount: 10,
+        isActive: true,
+      },
+    }),
+    prisma.promocode.create({
+      data: {
+        promoCode: 'SNACK15',
+        category: PromoCategory.FOOD_SNACKS,
+        description: 'Discount on snacks combo',
+        maxlimit: 100,
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountAmount: 15,
+        isActive: true,
+      },
+    }),
+    prisma.promocode.create({
+      data: {
+        promoCode: 'VIPUPGRADE',
+        category: PromoCategory.PREMIUM_UPGRADES,
+        description: 'Premium seat upgrade offer',
+        maxlimit: 50,
+        discountType: PromoDiscountType.FREE_TICKET,
+        discountAmount: 0,
+        isActive: true,
+      },
+    }),
+    prisma.promocode.create({
+      data: {
+        promoCode: 'STUDENT20',
+        category: PromoCategory.STUDENT_OFFERS,
+        description: 'Student ticket discount',
+        maxlimit: 200,
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountAmount: 20,
+        isActive: true,
+      },
+    }),
+    prisma.promocode.create({
+      data: {
+        promoCode: 'WEEKEND25',
+        category: PromoCategory.WEEKEND_DEALS,
+        description: 'Weekend booking discount',
+        maxlimit: 120,
+        discountType: PromoDiscountType.PERCENTAGE,
+        discountAmount: 25,
+        isActive: true,
+      },
+    }),
+  ]);
 
   const bookedShowSeat = await prisma.showSeat.findFirstOrThrow({
     where: { showId: show.id, status: SeatStatus.BOOKED },
@@ -149,7 +208,7 @@ async function main() {
       customerId: customer.id,
       eventId: event.id,
       showId: show.id,
-      promoCodeId: promo.id,
+      promoCodeId: promos[0].id,
       discount: 2,
       total: 18,
       paymentMethod: 'CARD',

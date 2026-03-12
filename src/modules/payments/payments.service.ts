@@ -1,5 +1,6 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 import { OrdersService } from '../orders/orders.service';
 import {
@@ -18,6 +19,7 @@ import {
 export class PaymentsService {
   constructor(
     private readonly ordersService: OrdersService,
+    private readonly configService: ConfigService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     @InjectQueue(PAYMENT_VERIFICATION_QUEUE) private readonly paymentQueue: Queue,
   ) {}
@@ -29,8 +31,18 @@ export class PaymentsService {
   async startPayment(dto: StartPaymentDto) {
     const order = await this.ordersService.findOne(dto.orderId);
     if (!order) throw new NotFoundException('Order not found');
+    const frontend = this.configService.get<string>('FRONTEND_URL') ?? 'http://localhost:3000';
+    const eventSlug = dto.eventSlug ?? order?.event?.slug ?? 'movie';
+    const successUrl =
+      dto.successUrl ??
+      `${frontend}/payment-success/${eventSlug}?orderId=${order.id}&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = dto.cancelUrl ?? `${frontend}/payment-cancel?orderId=${order.id}`;
 
-    const session = await this.gateway.startPayment(order.id, String(order.total));
+    const session = await this.gateway.startPayment(order.id, String(order.total), {
+      successUrl,
+      cancelUrl,
+      metadata: { orderId: order.id },
+    });
     await this.paymentQueue.add(
       PAYMENT_VERIFY_JOB,
       { orderId: order.id },
@@ -45,6 +57,10 @@ export class PaymentsService {
     return { orderId: order.id, state: order.state, ...session };
   }
 
+  startStripePayment(dto: StartPaymentDto) {
+    return this.startPayment(dto);
+  }
+
   async confirmPayment(dto: ConfirmPaymentDto) {
     const result = await this.gateway.verifyPayment(dto.paymentId);
     if (!result.success) {
@@ -53,6 +69,10 @@ export class PaymentsService {
     }
     const order = await this.ordersService.confirmOrder(dto.orderId, result.transactionId);
     return { success: true, state: order.state, order };
+  }
+
+  confirmStripePayment(dto: ConfirmPaymentDto) {
+    return this.confirmPayment(dto);
   }
 
   async failPayment(dto: FailPaymentDto) {

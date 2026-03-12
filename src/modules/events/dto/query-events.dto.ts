@@ -1,7 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { EventStatus } from '@prisma/client';
+import { EventStatus, EventType } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsOptional, Min } from 'class-validator';
+import { IsEnum, IsOptional, Min, IsString } from 'class-validator';
 
 export class QueryEventsDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 })
@@ -20,4 +20,14 @@ export class QueryEventsDto {
   @IsOptional()
   @IsEnum(EventStatus)
   status?: EventStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: EventType })
+  @IsOptional()
+  @IsEnum(EventType)
+  type?: EventType;
 }

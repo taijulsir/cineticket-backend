@@ -1,11 +1,17 @@
-import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { Role } from '@prisma/client';
+import { InviteStatus, Role } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { OAuth2Client } from 'google-auth-library';
+import { ROLE_PERMISSIONS } from 'src/common/constants/permissions';
+import { EmployeesRepository } from '../employees/employees.repository';
 import { AuthRepository } from './auth.repository';
+import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { SignupDto } from './dto/signup.dto';
 import { JwtPayload } from './types/jwt-payload.type';
 
 type AuthUser = { id: string; email: string; role: Role; passwordHash: string };
@@ -13,11 +19,20 @@ type SessionMeta = { device?: string; ipAddress?: string; userAgent?: string };
 
 @Injectable()
 export class AuthService {
+  private readonly googleClient: OAuth2Client;
+
   constructor(
     private readonly repo: AuthRepository,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {}
+    private readonly employeesRepo: EmployeesRepository,
+  ) {
+    this.googleClient = new OAuth2Client(
+      this.config.get<string>('GOOGLE_CLIENT_ID'),
+      this.config.get<string>('GOOGLE_CLIENT_SECRET'),
+      this.config.get<string>('GOOGLE_REDIRECT_URI'),
+    );
+  }
 
   async login(dto: LoginDto, session: SessionMeta) {
     const user = await this.validateUser(dto);
@@ -72,6 +87,155 @@ export class AuthService {
       metadata: { role: payload.role },
     });
     return { success: true };
+  }
+
+  async signup(dto: SignupDto, session: SessionMeta) {
+    const existing = await this.repo.findCustomerByEmail(dto.email);
+    if (existing) throw new ConflictException('An account with this email already exists');
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const customer = await this.repo.createCustomer({
+      name: dto.name,
+      email: dto.email,
+      passwordHash,
+      mobile: dto.mobile,
+      isSocial: false,
+      isVerified: false,
+    });
+
+    await this.repo.createAuditLog({
+      userId: customer.id,
+      action: 'AUTH_SIGNUP',
+      resource: 'customer',
+      resourceId: customer.id,
+      metadata: { ipAddress: session.ipAddress, device: session.device },
+    });
+
+    return this.issueTokenPair(
+      { sub: customer.id, email: customer.email, role: customer.role },
+      session,
+    );
+  }
+
+  async googleLogin(dto: GoogleLoginDto, session: SessionMeta) {
+    const googleClientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+
+    let googlePayload: { sub?: string; email?: string; name?: string; picture?: string };
+    try {
+      const ticket = await this.googleClient.verifyIdToken({
+        idToken: dto.googleToken,
+        audience: googleClientId,
+      });
+      const p = ticket.getPayload();
+      if (!p) throw new Error('Empty payload');
+      googlePayload = { sub: p.sub, email: p.email, name: p.name, picture: p.picture };
+    } catch {
+      throw new UnauthorizedException('Invalid Google token');
+    }
+
+    if (!googlePayload.email || !googlePayload.sub) {
+      throw new UnauthorizedException('Google token did not return an email or user ID');
+    }
+
+    // 1. Try by google ID first
+    let customer = await this.repo.findCustomerByGoogleId(googlePayload.sub);
+
+    // 2. Fall back to email match (link existing account)
+    if (!customer) {
+      customer = await this.repo.findCustomerByEmail(googlePayload.email);
+      if (customer) {
+        // Link google ID to existing account
+        customer = await this.repo.updateCustomerGoogleId(
+          customer.id,
+          googlePayload.sub,
+          googlePayload.picture,
+        );
+      }
+    }
+
+    // 3. Create new customer
+    if (!customer) {
+      customer = await this.repo.createCustomer({
+        name: googlePayload.name ?? googlePayload.email.split('@')[0],
+        email: googlePayload.email,
+        passwordHash: await bcrypt.hash(googlePayload.sub + Date.now(), 12),
+        googleId: googlePayload.sub,
+        dp: googlePayload.picture,
+        isSocial: true,
+        isVerified: true,
+      });
+    }
+
+    await this.repo.createAuditLog({
+      userId: customer.id,
+      action: 'AUTH_GOOGLE_LOGIN',
+      resource: 'customer',
+      resourceId: customer.id,
+      metadata: { ipAddress: session.ipAddress, device: session.device },
+    });
+
+    return this.issueTokenPair(
+      { sub: customer.id, email: customer.email, role: customer.role },
+      session,
+    );
+  }
+
+  async acceptInvite(dto: AcceptInviteDto, session: SessionMeta) {
+    // Find invitation by token
+    const invite = await this.employeesRepo.findInviteByToken(dto.token);
+    
+    if (!invite) {
+      throw new UnauthorizedException('Invalid invitation token');
+    }
+
+    if (invite.status !== InviteStatus.PENDING) {
+      throw new UnauthorizedException('Invitation has already been used or expired');
+    }
+
+    if (invite.expiresAt < new Date()) {
+      await this.employeesRepo.updateInviteStatus(invite.id, InviteStatus.EXPIRED);
+      throw new UnauthorizedException('Invitation has expired');
+    }
+
+    // Check if employee already exists
+    const existingEmployee = await this.employeesRepo.findByEmail(invite.email);
+    if (existingEmployee && !existingEmployee.deletedAt) {
+      throw new ConflictException('Employee account already exists');
+    }
+
+    // Hash password
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    // Get default permissions for the role
+    const permissions = ROLE_PERMISSIONS[invite.role];
+
+    // Create employee
+    const employee = await this.employeesRepo.createEmployeeFromInvite(
+      invite.email,
+      dto.name,
+      passwordHash,
+      invite.role,
+      permissions,
+      invite.invitedById,
+    );
+
+    // Update invite status
+    await this.employeesRepo.updateInviteStatus(invite.id, InviteStatus.ACCEPTED);
+
+    // Create audit log
+    await this.repo.createAuditLog({
+      userId: employee.id,
+      action: 'AUTH_EMPLOYEE_INVITE_ACCEPTED',
+      resource: 'employee',
+      resourceId: employee.id,
+      metadata: { role: invite.role, invitedBy: invite.invitedById, ipAddress: session.ipAddress },
+    });
+
+    // Issue tokens
+    return this.issueTokenPair(
+      { sub: employee.id, email: employee.email, role: employee.role },
+      session,
+    );
   }
 
   private async validateUser(dto: LoginDto): Promise<AuthUser> {

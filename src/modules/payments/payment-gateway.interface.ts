@@ -4,13 +4,19 @@ export type PaymentSession = {
   checkoutUrl: string;
 };
 
+export type PaymentStartOptions = {
+  successUrl?: string;
+  cancelUrl?: string;
+  metadata?: Record<string, string>;
+};
+
 export type PaymentVerificationResult = {
   success: boolean;
   transactionId: string;
 };
 
 export interface PaymentGateway {
-  startPayment(orderId: string, amount: string): Promise<PaymentSession>;
+  startPayment(orderId: string, amount: string, options?: PaymentStartOptions): Promise<PaymentSession>;
   verifyPayment(paymentId: string): Promise<PaymentVerificationResult>;
 }
 

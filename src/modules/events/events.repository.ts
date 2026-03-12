@@ -12,10 +12,34 @@ export class EventsRepository {
       skip,
       take,
       orderBy: { releaseDate: 'desc' },
+      include: { crews: { where: { type: 'GENRE', deletedAt: null }, select: { name: true } } },
     });
   }
 
   count(where: Prisma.EventWhereInput) {
     return this.prisma.event.count({ where });
+  }
+
+  findBySlug(slug: string) {
+    return this.prisma.event.findFirst({
+      where: { slug, deletedAt: null, isArchive: false },
+      include: {
+        crews: { where: { type: 'GENRE', deletedAt: null }, select: { name: true } },
+        shows: {
+          where: { deletedAt: null, isArchive: false },
+          include: { theater: true, hall: true },
+          orderBy: { date: 'asc' },
+        },
+      },
+    });
+  }
+
+  findRelated(eventId: string, limit = 6) {
+    return this.prisma.event.findMany({
+      where: { id: { not: eventId }, deletedAt: null, isArchive: false, type: 'MOVIE' },
+      orderBy: { releaseDate: 'desc' },
+      take: limit,
+      include: { crews: { where: { type: 'GENRE', deletedAt: null }, select: { name: true } } },
+    });
   }
 }

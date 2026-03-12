@@ -237,4 +237,19 @@ export class AdminController {
   deleteSocialLink(@Param('id') id: string) {
     return this.service.deleteSocialLink(id);
   }
+
+  @Get('movies/search')
+  searchMovies(@Query('title') title: string) {
+    return this.service.searchMovies(title);
+  }
+
+  @Get('movies/import/:id')
+  importMovie(@Param('id') id: string) {
+    return this.service.importMovie(id);
+  }
+
+  @Post('movies/bulk-refresh')
+  bulkRefreshMovies() {
+    return this.service.bulkRefreshMovies();
+  }
 }

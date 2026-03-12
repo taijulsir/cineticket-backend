@@ -22,11 +22,25 @@ export class PaymentsController {
     return this.service.startPayment(dto);
   }
 
+  @Post('stripe/start')
+  @ApiBody({ type: StartPaymentDto })
+  @ApiOkResponse({ description: 'Create Stripe checkout session for pending order' })
+  startStripe(@Body() dto: StartPaymentDto) {
+    return this.service.startStripePayment(dto);
+  }
+
   @Post('mock/confirm')
   @ApiBody({ type: ConfirmPaymentDto })
   @ApiOkResponse({ description: 'Confirm payment and mark order confirmed' })
   confirm(@Body() dto: ConfirmPaymentDto) {
     return this.service.confirmPayment(dto);
+  }
+
+  @Post('stripe/confirm')
+  @ApiBody({ type: ConfirmPaymentDto })
+  @ApiOkResponse({ description: 'Confirm Stripe checkout session and mark order confirmed' })
+  confirmStripe(@Body() dto: ConfirmPaymentDto) {
+    return this.service.confirmStripePayment(dto);
   }
 
   @Post('mock/fail')
