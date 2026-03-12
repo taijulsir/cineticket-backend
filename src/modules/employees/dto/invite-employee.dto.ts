@@ -4,13 +4,13 @@ import { IsEmail, IsEnum, IsNotEmpty, IsString } from 'class-validator';
 export class InviteEmployeeDto {
   @IsString()
   @IsNotEmpty()
-  name: string;
+  name!: string;
 
   @IsEmail()
   @IsNotEmpty()
-  email: string;
+  email!: string;
 
   @IsEnum(EmployeeRole)
   @IsNotEmpty()
-  role: EmployeeRole;
+  role!: EmployeeRole;
 }

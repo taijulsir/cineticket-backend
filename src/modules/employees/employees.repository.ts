@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { EmployeeRole, EmployeeStatus, InviteStatus } from '@prisma/client';
-import { DatabaseService } from 'src/database/database.service';
+import { PrismaService } from '../../database/prisma/prisma.service';
 
 @Injectable()
 export class EmployeesRepository {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly db: PrismaService) {}
 
   async findAll() {
     return this.db.employee.findMany({

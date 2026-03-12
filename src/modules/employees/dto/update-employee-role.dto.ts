@@ -4,5 +4,5 @@ import { IsEnum, IsNotEmpty } from 'class-validator';
 export class UpdateEmployeeRoleDto {
   @IsEnum(EmployeeRole)
   @IsNotEmpty()
-  role: EmployeeRole;
+  role!: EmployeeRole;
 }

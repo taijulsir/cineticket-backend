@@ -36,36 +36,46 @@ export class AuthService {
 
   async login(dto: LoginDto, session: SessionMeta) {
     const user = await this.validateUser(dto);
+
     await this.repo.createAuditLog({
       userId: user.id,
       action: 'AUTH_LOGIN_SUCCESS',
       resource: 'auth',
       metadata: { role: user.role, ipAddress: session.ipAddress, device: session.device },
     });
+
     return this.issueTokenPair({ sub: user.id, email: user.email, role: user.role }, session);
   }
 
   async refresh(dto: RefreshTokenDto, session: SessionMeta) {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
+
     const record = await this.repo.findRefreshTokenById(payload.tokenId!);
+
     if (!record) {
       await this.handleTokenReuse(payload, 'NOT_FOUND', session);
       throw new UnauthorizedException('Invalid refresh token');
     }
+
     if (record.userId !== payload.sub || record.role !== payload.role) {
       await this.handleTokenReuse(payload, 'IDENTITY_MISMATCH', session);
       throw new UnauthorizedException('Invalid refresh token');
     }
+
     if (record.revokedAt || record.deletedAt || record.expiresAt < new Date()) {
       await this.handleTokenReuse(payload, 'REUSED_OR_EXPIRED', session);
       throw new UnauthorizedException('Session compromised. Please log in again.');
     }
+
     const matched = await bcrypt.compare(dto.refreshToken, record.tokenHash);
+
     if (!matched) {
       await this.handleTokenReuse(payload, 'HASH_MISMATCH', session);
       throw new UnauthorizedException('Session compromised. Please log in again.');
     }
+
     await this.repo.revokeRefreshToken(record.id);
+
     await this.repo.createAuditLog({
       userId: payload.sub,
       action: 'AUTH_REFRESH_ROTATE',
@@ -73,12 +83,15 @@ export class AuthService {
       resourceId: record.id,
       metadata: { ipAddress: session.ipAddress, device: session.device },
     });
+
     return this.issueTokenPair({ sub: payload.sub, email: payload.email, role: payload.role }, session);
   }
 
   async logout(dto: RefreshTokenDto) {
     const payload = await this.verifyRefreshToken(dto.refreshToken);
+
     await this.repo.revokeRefreshToken(payload.tokenId!);
+
     await this.repo.createAuditLog({
       userId: payload.sub,
       action: 'AUTH_LOGOUT',
@@ -86,6 +99,7 @@ export class AuthService {
       resourceId: payload.tokenId,
       metadata: { role: payload.role },
     });
+
     return { success: true };
   }
 
@@ -94,6 +108,7 @@ export class AuthService {
     if (existing) throw new ConflictException('An account with this email already exists');
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
+
     const customer = await this.repo.createCustomer({
       name: dto.name,
       email: dto.email,
@@ -121,14 +136,22 @@ export class AuthService {
     const googleClientId = this.config.get<string>('GOOGLE_CLIENT_ID');
 
     let googlePayload: { sub?: string; email?: string; name?: string; picture?: string };
+
     try {
       const ticket = await this.googleClient.verifyIdToken({
         idToken: dto.googleToken,
         audience: googleClientId,
       });
+
       const p = ticket.getPayload();
       if (!p) throw new Error('Empty payload');
-      googlePayload = { sub: p.sub, email: p.email, name: p.name, picture: p.picture };
+
+      googlePayload = {
+        sub: p.sub,
+        email: p.email,
+        name: p.name,
+        picture: p.picture,
+      };
     } catch {
       throw new UnauthorizedException('Invalid Google token');
     }
@@ -137,14 +160,12 @@ export class AuthService {
       throw new UnauthorizedException('Google token did not return an email or user ID');
     }
 
-    // 1. Try by google ID first
     let customer = await this.repo.findCustomerByGoogleId(googlePayload.sub);
 
-    // 2. Fall back to email match (link existing account)
     if (!customer) {
       customer = await this.repo.findCustomerByEmail(googlePayload.email);
+
       if (customer) {
-        // Link google ID to existing account
         customer = await this.repo.updateCustomerGoogleId(
           customer.id,
           googlePayload.sub,
@@ -153,7 +174,6 @@ export class AuthService {
       }
     }
 
-    // 3. Create new customer
     if (!customer) {
       customer = await this.repo.createCustomer({
         name: googlePayload.name ?? googlePayload.email.split('@')[0],
@@ -181,9 +201,8 @@ export class AuthService {
   }
 
   async acceptInvite(dto: AcceptInviteDto, session: SessionMeta) {
-    // Find invitation by token
     const invite = await this.employeesRepo.findInviteByToken(dto.token);
-    
+
     if (!invite) {
       throw new UnauthorizedException('Invalid invitation token');
     }
@@ -197,19 +216,17 @@ export class AuthService {
       throw new UnauthorizedException('Invitation has expired');
     }
 
-    // Check if employee already exists
     const existingEmployee = await this.employeesRepo.findByEmail(invite.email);
+
     if (existingEmployee && !existingEmployee.deletedAt) {
       throw new ConflictException('Employee account already exists');
     }
 
-    // Hash password
     const passwordHash = await bcrypt.hash(dto.password, 12);
 
-    // Get default permissions for the role
-    const permissions = ROLE_PERMISSIONS[invite.role];
+    const roleKey = invite.role as keyof typeof ROLE_PERMISSIONS;
+    const permissions = ROLE_PERMISSIONS[roleKey];
 
-    // Create employee
     const employee = await this.employeesRepo.createEmployeeFromInvite(
       invite.email,
       dto.name,
@@ -219,10 +236,8 @@ export class AuthService {
       invite.invitedById,
     );
 
-    // Update invite status
     await this.employeesRepo.updateInviteStatus(invite.id, InviteStatus.ACCEPTED);
 
-    // Create audit log
     await this.repo.createAuditLog({
       userId: employee.id,
       action: 'AUTH_EMPLOYEE_INVITE_ACCEPTED',
@@ -231,7 +246,6 @@ export class AuthService {
       metadata: { role: invite.role, invitedBy: invite.invitedById, ipAddress: session.ipAddress },
     });
 
-    // Issue tokens
     return this.issueTokenPair(
       { sub: employee.id, email: employee.email, role: employee.role },
       session,
@@ -241,45 +255,76 @@ export class AuthService {
   private async validateUser(dto: LoginDto): Promise<AuthUser> {
     if (dto.role === Role.Customer) {
       const customer = await this.repo.findCustomerByEmail(dto.email);
-      if (!customer) throw new UnauthorizedException('Invalid credentials');
+
+      if (!customer || !customer.passwordHash) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
       const passOk = await bcrypt.compare(dto.password, customer.passwordHash);
+
       if (!passOk) throw new UnauthorizedException('Invalid credentials');
-      return { id: customer.id, email: customer.email, role: customer.role, passwordHash: customer.passwordHash };
+
+      return {
+        id: customer.id,
+        email: customer.email,
+        role: customer.role,
+        passwordHash: customer.passwordHash,
+      };
     }
+
     const employee = await this.repo.findEmployeeByEmail(dto.email);
-    if (!employee || employee.role !== dto.role) throw new UnauthorizedException('Invalid credentials');
+
+    if (!employee || employee.role !== dto.role || !employee.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
     const passOk = await bcrypt.compare(dto.password, employee.passwordHash);
+
     if (!passOk) throw new UnauthorizedException('Invalid credentials');
-    return { id: employee.id, email: employee.email, role: employee.role, passwordHash: employee.passwordHash };
+
+    return {
+      id: employee.id,
+      email: employee.email,
+      role: employee.role,
+      passwordHash: employee.passwordHash,
+    };
   }
 
   private async issueTokenPair(base: Omit<JwtPayload, 'tokenId'>, session: SessionMeta) {
     const accessSecret =
       this.config.get<string>('JWT_SECRET') ?? this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
+
     const refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
-    const accessTtl = this.config.get<string>('ACCESS_TOKEN_EXPIRY') ?? '15m';
-    const refreshTtl = this.config.get<string>('REFRESH_TOKEN_EXPIRY') ?? '30d';
-    const accessTtlSeconds = this.parseExpiryToSeconds(accessTtl, 15 * 60);
-    const refreshTtlSeconds = this.parseExpiryToSeconds(refreshTtl, 30 * 24 * 60 * 60);
-    const refreshTtlMs = 30 * 24 * 60 * 60 * 1000;
-    const refreshExpiry = new Date(Date.now() + refreshTtlMs);
-    const refresh = await this.repo.createRefreshToken(base.sub, base.role, refreshExpiry, session);
-    const refreshPayload: JwtPayload = { ...base, tokenId: refresh.id };
+
     const accessToken = await this.jwt.signAsync(base, {
       secret: accessSecret,
-      expiresIn: accessTtlSeconds,
+      expiresIn: '15m',
     });
+
+    const refresh = await this.repo.createRefreshToken(
+      base.sub,
+      base.role,
+      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      session,
+    );
+
+    const refreshPayload: JwtPayload = { ...base, tokenId: refresh.id };
+
     const refreshToken = await this.jwt.signAsync(refreshPayload, {
       secret: refreshSecret,
-      expiresIn: refreshTtlSeconds,
+      expiresIn: '30d',
     });
+
     const tokenHash = await bcrypt.hash(refreshToken, 10);
+
     await this.repo.updateRefreshTokenHash(refresh.id, tokenHash);
+
     return { accessToken, refreshToken, expiresIn: '15m' };
   }
 
   private async handleTokenReuse(payload: JwtPayload, reason: string, session: SessionMeta) {
     await this.repo.revokeAllUserRefreshTokens(payload.sub);
+
     await this.repo.createAuditLog({
       userId: payload.sub,
       action: 'AUTH_REFRESH_TOKEN_REUSE_DETECTED',
@@ -294,22 +339,14 @@ export class AuthService {
       const payload = await this.jwt.verifyAsync<JwtPayload>(token, {
         secret: this.config.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
-      if (!payload.tokenId) throw new ForbiddenException('Invalid refresh token payload');
+
+      if (!payload.tokenId) {
+        throw new ForbiddenException('Invalid refresh token payload');
+      }
+
       return payload;
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
     }
-  }
-
-  private parseExpiryToSeconds(input: string, fallback: number): number {
-    const match = /^([0-9]+)([smhd])$/.exec(input.trim());
-    if (!match) return fallback;
-    const value = Number(match[1]);
-    const unit = match[2];
-    if (unit === 's') return value;
-    if (unit === 'm') return value * 60;
-    if (unit === 'h') return value * 3600;
-    if (unit === 'd') return value * 86400;
-    return fallback;
   }
 }
