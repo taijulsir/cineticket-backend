@@ -90,7 +90,8 @@ export class AdminService {
   }
 
   createTheater(dto: CreateAdminTheaterDto) {
-    return this.prisma.theater.create({ data: dto });
+    const slug = (dto as any).slug ?? this.generateSlug((dto as any).name ?? 'theater');
+    return this.prisma.theater.create({ data: { ...dto, slug } });
   }
 
   createHall(dto: CreateAdminHallDto) {
