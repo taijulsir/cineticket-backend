@@ -42,4 +42,11 @@ export class EventsRepository {
       include: { crews: { where: { type: 'GENRE', deletedAt: null }, select: { name: true } } },
     });
   }
+
+  findCustomerUpvotes(customerId: string) {
+    return this.prisma.eventUpvote.findMany({
+      where: { customerId, deletedAt: null },
+      include: { event: true },
+    });
+  }
 }

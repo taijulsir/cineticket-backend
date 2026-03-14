@@ -56,4 +56,8 @@ export class EventsService {
     const related = await this.repository.findRelated(current.id, 6);
     return related.map((item) => this.enrichMoviePayload(item));
   }
+
+  async getCustomerUpvotes(customerId: string) {
+    return this.repository.findCustomerUpvotes(customerId);
+  }
 }
