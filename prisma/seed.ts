@@ -14,6 +14,14 @@ import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+function generateSlug(input: string) {
+  return String(input)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)+/g, '');
+}
+
 async function main() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -42,6 +50,7 @@ async function main() {
   const theater = await prisma.theater.create({
     data: {
       name: 'CineTicket Central',
+      slug: generateSlug('CineTicket Central'),
       countryId: country.id,
       stateId: state.id,
       cityId: city.id,

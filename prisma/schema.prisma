@@ -207,22 +207,27 @@ model City {
 }
 
 model Theater {
-  id        String    @id @default(uuid()) @db.Uuid
-  name      String
-  countryId String    @map("country_id") @db.Uuid
-  address   String
-  cityId    String    @map("city_id") @db.Uuid
-  stateId   String    @map("state_id") @db.Uuid
-  zipCode   String    @map("zip_code")
-  isArchive Boolean   @default(false) @map("is_archive")
-  country   Country   @relation(fields: [countryId], references: [id])
-  city      City      @relation(fields: [cityId], references: [id])
-  state     State     @relation(fields: [stateId], references: [id])
-  halls     Hall[]
-  shows     Show[]
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String    @unique
+  countryId   String    @map("country_id") @db.Uuid
+  stateId     String    @map("state_id") @db.Uuid
+  cityId      String    @map("city_id") @db.Uuid
+  address     String
+  zipCode     String    @map("zip_code")
+  description String?
+  images      String[]  @default([])
+  amenities   String[]  @default([])
+  formats     String[]  @default([])
+  isArchive   Boolean   @default(false) @map("is_archive")
+  country     Country   @relation(fields: [countryId], references: [id])
+  city        City      @relation(fields: [cityId], references: [id])
+  state       State     @relation(fields: [stateId], references: [id])
+  halls       Hall[]
+  shows       Show[]
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
 
   @@index([countryId])
   @@index([cityId])
